@@ -1,0 +1,144 @@
+---
+title: "Analysis"
+output: html_notebook
+---
+
+
+
+<h2>Import libraries</h2>
+```{r}
+library(ggplot2)
+library(caret)
+library(tidyr)
+library(dplyr)
+library(earth)
+library(doParallel)
+```
+
+<h2>Read in data</h2>
+```{r}
+setwd("/Users/bmc/Desktop/KCAIL/KState_Data_Exploration/data/")
+df_train <- read.csv("Series3_6.15.17_padel.csv", header=TRUE)
+df_extra <- read.csv("Selleck_filtered_padel_corrected.csv", header=TRUE)
+```
+<h2>Clean, bin, and merge</h2>
+```{r}
+row.names(df_train) <- as.character(df_train$Name)
+row.names(df_extra) <- as.character(df_extra$Name)
+df_train$potent <- "IMPOTENT"
+df_train[df_train$IC50 < 40,"potent"] <- "POTENT"
+df_extra$potent <- "IMPOTENT"
+df <- rbind(df_train, df_extra)
+head(df)
+```
+<h2>Cluster (Note: before Preprocessing)</h2>
+```{r}
+clusterRes <- df_train %>% select(-c(IC50, Name, potent)) %>% kmeans(centers=2)
+df_train$cluster <- clusterRes$cluster
+df_train <- df_train[with(df_train, order(-cluster)),]
+
+clusterRes <- df %>% select(-c(IC50, Name, potent)) %>% kmeans(centers=2)
+df$cluster <- clusterRes$cluster
+df <- df[with(df, order(-cluster)),]
+head(df)
+```
+
+<h2>Reorder predictors</h2>
+```{r}
+df_train <- df_train %>% select(Name, IC50, potent, cluster, everything())
+df_extra <- df_extra %>% select(Name, IC50, potent, everything())
+df <- df %>% select(Name, IC50, potent, cluster, everything())
+head(names(df))
+```
+
+<h2>Preprocessing</h2>
+```{r}
+cat("Series shape:", dim(df_train),"\n")
+preproc <- df_train %>% 
+          select(-c(Name,potent, cluster)) %>% 
+          preProcess(method=c("center", "scale", "nzv", "BoxCox", "pca"))
+
+new_df_train <- predict(preproc,newdata=select(df_train,-c(Name,potent, cluster))) %>% 
+                mutate(Name = df_train$Name,
+                       cluster = df_train$cluster,
+                       potent = df_train$potent)
+
+cat("Series transformed shape:",dim(new_df_train))
+```
+
+## What does our spread of IC50 look like in Series?
+<p>We can clearly identify our most potent compounds, OMS-S-106, OMS-S-121, OMS-S-137, and OMS-S-142. We can also see that there are what look like levels within our potency, leading us to believe there may exist distinct clusters within the potent dataset causing logical divisions. We can explore this theory by binning, clustering, and seeing if our clusters match the bins with scoring metrics such as homogenuity(clusters within class purity), completeness(class within cluster purity), or v-measure(formulating both).</p>
+```{r}
+ggplot(data=data.frame(Compound=df_train$Name,
+                       IC50=df_train$IC50)) +
+  geom_point(aes(x=Compound, y=IC50), size=2 ,alpha=1 )+ 
+  theme(axis.text.x = element_text(angle = 90, hjust=0.5)) + ggtitle('Compound vs. IC50', subtitle="Series Dataset")
+```
+
+## What does our spread of IC50 look like in Seleck+Series?
+<p>Since Kmeans is a heuristcal local-optimal clustering algorithm, we cannot guarentee it will cluster the same everytime based on centroid positioning. This is often integrated with a Monte Carlo based simulation to get a working average over N repeats of the Kmeans, though still a local optimal, a good explaination of how it will behave in terms of chance and reproducibility. No insights immediately gleaned from this visual.</p>
+```{r}
+ggplot(data=data.frame(Compound=df$Name,
+                       IC50=df$IC50,
+                       cluster=as.factor(df$cluster)) )+
+  geom_point(aes(x=Compound, y=IC50, color=cluster), size=2, alpha=.5 )+ 
+  theme(axis.text.x = element_text(angle = 90, hjust=0.5)) + ggtitle('Compound vs. IC50', subtitle = "Series and Selleck Datasets")+coord_flip() 
+```
+
+## What do our correlations look like in Series?
+<p>Yello is no correlation, Green is perfect negative correlation, and White is perfect position correlation. Our main diagonal is clearly white because of the nature of a variable relating with itself as it changes. We excluded IC50 from this plot to see how these chemical features relate to one another overall within the potent data set (Series) alone. It is not hard to see a gridlike or hex-shaped pattern. This shows us their are clusters of chemical features that show relationship with one another. While not much more exploration shows a LOT of non-correlation as yellow. We see sprinkles of negative correlation, but pockets of positive correlation. This leads us to postulate that their does exist a meaningful subset of features that could be causing the power behind IC50 being low, I.e., potent.</p>
+```{r}
+# At a high level, do clear correlations exist in our data sets?
+df_train[,c(5:ncol(df_train))] <- df_train[,c(5:ncol(df_train))] %>% mutate_all(as.numeric)
+
+tile_df_series <- cor(df_train[,c(5:ncol(df_train))]) %>% 
+                      data.frame %>% 
+                      mutate(from=names(df_train[,c(5:ncol(df_train))])) %>%
+                      gather(key="to", value="cor", -from)
+
+ggplot(data=tile_df_series) + geom_tile(aes(x=from, y=to, fill=cor)) +
+  scale_fill_gradientn(colours = terrain.colors(100)) +ggtitle("Chemical Feature Correlation",
+                                                               subtitle = "Series Dataset")
+```
+
+## What do our correlations look like in  Seleck?
+<p>We explore the same question as before with our Seleck dataset, which we know does not influence IC50 whatsoever in terms of being potent. Outside of the null relationships in grey, we do not see nearly as many pockets of correlation as before.</p>
+```{r}
+tile_df_selleck <- cor(df_extra[,c(4:ncol(df_extra))]) %>% 
+                      data.frame %>% 
+                      mutate(from=names(df_extra[,c(4:ncol(df_extra))])) %>%
+                      gather(key="to", value="cor", -from)
+
+ggplot(data=tile_df_selleck) + geom_tile(aes(x=from, y=to, fill=cor)) +
+  scale_fill_gradientn(colours = terrain.colors(100)) +ggtitle("Chemical Feature Correlation",
+                                                               subtitle = "Selleck Dataset")
+```
+
+## What do our correlations look like in Series + Seleck
+<p>When we marry up our datasets, we get the following look at correlation, which though midly doubtful after the second heatmap (of seleck), looks rather consistent pattern-wise. As you move up the main diagonal you see a clear vertical-horizontal spread of correlation within a dominant square-space.</p>
+```{r}
+tile_df_joint <- cor(df[,c(5:ncol(df))]) %>% 
+                    data.frame %>% 
+                    mutate(from=names(df[,c(5:ncol(df))])) %>%
+                    gather(key="to", value="cor", -from)
+
+ggplot(data=tile_df_joint) + geom_tile(aes(x=from, y=to, fill=cor)) +
+  scale_fill_gradientn(colours = terrain.colors(100)) +ggtitle("Chemical Feature Correlation",
+                                                               subtitle = "Series and Selleck Datasets")
+
+```
+
+```{r}
+setwd("/Users/bmc/Desktop/KCAIL/KState_Data_Exploration/data/")
+train2 <- read.csv("old_Series3_6.15.17_padel.csv", header=TRUE)
+train2 <- train2[!is.na(train2$IC50),]
+optProp <- 0.036/train2$IC50
+ggplot(data=data.frame(IC50=train2$IC50, Optimality_Proportion=optProp)) + geom_point(aes(x=IC50, y=Optimality_Proportion)) + ggtitle("IC50 vs. (0.036/IC50)", subtitle="Optimality Proportionality to highest IC50")
+
+ggplot(data=data.frame(IC50=train2$IC50[2:length(train2$IC50)], Optimality_Proportion=optProp[2:length(optProp)])) + geom_point(aes(x=IC50, y=Optimality_Proportion)) + ggtitle("IC50 vs. (0.036/IC50)", subtitle="Optimality Proportionality to highest IC50 | Drop OSM-S-106")
+```
+
+```{r}
+ggplot(data=data.frame(IC50=1/train2$IC50[2:length(train2$IC50)], Optimality_Proportion=optProp[2:length(optProp)])) + geom_point(aes(x=IC50, y=Optimality_Proportion)) + ggtitle("IC50 vs. (0.036/IC50)", subtitle="Optimality Proportionality to highest IC50 | Drop OSM-S-106")
+```
+

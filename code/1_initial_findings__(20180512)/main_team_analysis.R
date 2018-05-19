@@ -4,10 +4,14 @@
 #install.packages('caret')
 #install.packages('ggplot2')
 #install.packages('mlbench')
+#install.packages('doParallel')
+#install.packages('earth')
 library(ggplot2)
 library(caret)
-library(mlbench)
+library(tidyr)
 library(dplyr)
+library(earth)
+library(doParallel)
 
 setwd("/Users/bmc/Desktop/KCAIL/KState_Data_Exploration/data/")
 df_train <- read.csv("Series3_6.15.17_padel.csv", header=TRUE)
@@ -53,18 +57,19 @@ df_test_imputed[,2:ncol(df_test_imputed)] <- df_test_imputed %>%
   
 # control
 ctrl = trainControl(method="repeatedcv",
-                    repeats=10,
+                    repeats=3,
                     number = 3,
                     summaryFunction = defaultSummary)
 
 # gridspace
 knnGrid <- data.frame(k = seq(3:25)) #knn
 leapSeqGrid <- data.frame(nvmax = seq(10:(ncol(df_train))))
-bagEarthGrid <- data.frame(expand.grid(nprune=c(1,10,100),degree= c(1:5)))
+bagEarthGrid <- expand.grid(nprune=c(1,10,100), degree= c(1:5))
 
 # model 1 
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
 set.seed(123)
-
 knnFit <- train(IC50 ~.,
                 data = df_train,
                 method = c("knn"),
@@ -73,16 +78,24 @@ knnFit <- train(IC50 ~.,
                 trControl = ctrl)
 ggplot(knnFit)
 knnFit
+save(knnFit, file = "regression_knnFit.out")
+load("regression_knnFit.out")
 
+knnFit
 # model 2
 set.seed(123)
 marsFit <- train(IC50 ~.,
                  data = df_train,
-                 method = c("badEarth"),
+                 method = c("bagEarth"),
                  preProc = c("center", "scale","BoxCox" ,"nzv"),
                  tuneGrid = bagEarthGrid,
                  trControl = ctrl)
 ggplot(marsFit)
+marsFit
+save(marsFit, file = "regression_marsFit.out")
+load("regression_marsFit.out")
+
+
 
 # model 3
 set.seed(123)
@@ -94,6 +107,8 @@ lmMixedFit <- train(IC50 ~.,
                 trControl = ctrl)
 
 ggplot(lmMixedFit)
+save(kmMixedFit, file = "regression_lmMixedFitFit.out")
+load("regression_lmMixedFit.out")
 
 # Model 4
 set.seed(123)
@@ -105,7 +120,11 @@ svmRadialFit <- train(IC50 ~.,
                     trControl = ctrl)
 
 ggplot(svmRadialFit)
-svmRadialFit
+save(svmRadialFit, file = "regression_svmRadialFit.out")
+load("regression_svmRadialFit.out")
+
+stopCluster(cl)
+
 
 # Resampling
 resamps <- resamples(list(knn=knnFit,
