@@ -62,26 +62,12 @@ ctrl = trainControl(method="repeatedcv",
                     summaryFunction = defaultSummary)
 
 # gridspace
-knnGrid <- data.frame(k = seq(3:25)) #knn
-leapSeqGrid <- data.frame(nvmax = seq(10:(ncol(df_train))))
 bagEarthGrid <- expand.grid(nprune=c(1,10,100), degree= c(1:5))
 
 # model 1 
 cl <- makeCluster(detectCores())
 registerDoParallel(cl)
-set.seed(123)
-knnFit <- train(IC50 ~.,
-                data = df_train,
-                method = c("knn"),
-                preProc = c("center", "scale","BoxCox" ,"nzv"),
-                tuneGrid = knnGrid,
-                trControl = ctrl)
-ggplot(knnFit)
-knnFit
-save(knnFit, file = "regression_knnFit.out")
-load("regression_knnFit.out")
 
-knnFit
 # model 2
 set.seed(123)
 marsFit <- train(IC50 ~.,
@@ -93,46 +79,9 @@ marsFit <- train(IC50 ~.,
 ggplot(marsFit)
 marsFit
 save(marsFit, file = "regression_marsFit.out")
+
 load("regression_marsFit.out")
 
-
-
-# model 3
-set.seed(123)
-lmMixedFit <- train(IC50 ~.,
-                data = df_train,
-                method = c("leapSeq"),
-                preProc = c("center", "scale","BoxCox" ,"nzv"),
-                tuneGrid = leapSeqGrid,
-                trControl = ctrl)
-
-ggplot(lmMixedFit)
-save(kmMixedFit, file = "regression_lmMixedFitFit.out")
-load("regression_lmMixedFit.out")
-
-# Model 4
-set.seed(123)
-svmRadialFit <- train(IC50 ~.,
-                    data = df_train,
-                    method = c("svmRadial"),
-                    preProc = c("center", "scale","BoxCox" ,"nzv"),
-                    tuneLength = 10,
-                    trControl = ctrl)
-
-ggplot(svmRadialFit)
-save(svmRadialFit, file = "regression_svmRadialFit.out")
-load("regression_svmRadialFit.out")
-
 stopCluster(cl)
-
-
-# Resampling
-resamps <- resamples(list(knn=knnFit,
-                          mars=marsFit,
-                          lmMixed=lmMixedFit,
-                          svmRadial=svmRadialFit))
-summary(resamps)
-
-# Are the models statistically different?
-diffs <- diff(resamps)
-summary(diffs)
+results<-predict(marsFit, newdata=df_test)
+results

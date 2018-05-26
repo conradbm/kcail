@@ -4,7 +4,7 @@ output: html_notebook
 ---
 
 
-
+<h1>Author: Blake Conrad</h1>
 <h2>Import libraries</h2>
 ```{r}
 library(ggplot2)
@@ -140,5 +140,49 @@ ggplot(data=data.frame(IC50=train2$IC50[2:length(train2$IC50)], Optimality_Propo
 
 ```{r}
 ggplot(data=data.frame(IC50=1/train2$IC50[2:length(train2$IC50)], Optimality_Proportion=optProp[2:length(optProp)])) + geom_point(aes(x=IC50, y=Optimality_Proportion)) + ggtitle("IC50 vs. (0.036/IC50)", subtitle="Optimality Proportionality to highest IC50 | Drop OSM-S-106")
+```
+
+## What do the cosine similarities look like between points?
+## What do the jaccard similarities look like between points?
+```{r}
+jaccard <- function(df, margin=1) {
+  if (margin == 1 | margin == 2) {
+    M_00 <- apply(df, margin, sum) == 0
+    M_11 <- apply(df, margin, sum) == 2
+    if (margin == 1) {
+      cat("~~")
+      df <- df[!M_00, ]
+      JSim <- sum(M_11) / nrow(df)
+    } else {
+      df <- df[, !M_00]
+      JSim <- sum(M_11) / length(df)
+    }
+    JDist <- 1 - JSim
+    return(c(JSim = JSim, JDist = JDist))
+  } else break
+}
+d
+jaccard(d[1:2,], margin=2)
+
+
+jaccard_per_row <- function(df, margin=1){
+   key_pairs <- expand.grid(row.names(df), row.names(df))
+   print(key_pairs)
+   results <- t(apply(key_pairs, 1, function(row) jaccard(df[c(row[1], row[2]),], margin=margin)))
+   print(results)
+   sim_df <- data.frame(matrix(results[,1], nrow(df), nrow(df)), row.names=row.names(df))
+   dist_df <- data.frame(matrix(results[,2], nrow(df), nrow(df)), row.names=row.names(df))
+   names(sim_df) <- row.names(df)
+   names(dist_df) <- row.names(df)
+   list(JSim=sim_df, JDist=dist_df)
+}
+
+jaccard_per_row(d, margin=2)
+d <- df_train[,2:5]
+d[d>0] <- 1
+d[d<=0] <- 0
+d
+apply_jaccard(d, margin=1)
+d
 ```
 
